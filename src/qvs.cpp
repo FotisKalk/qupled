@@ -27,9 +27,6 @@ double QVSStls::computeAlpha() {
   const double& Q = QData[0];
   const double& Qr = QData[1];
   const double& Qt = QData[2];
-  // cout << "Q = " << Q << endl;
-  // cout << "Qr = " << Qr << endl;
-  // cout << "Qt = " << Qt << endl;
   // Alpha
   double numer = Q - (1.0/6.0) * fxcrr + (1.0/3.0) * fxcr;
   double denom =  Q + (1.0/3.0) * Qr;
@@ -92,29 +89,38 @@ int QStructProp::compute() {
       auto& c = csr[i];
       // If there was no fixed file specified in input
       if (in.getFixed().empty() && i % 3 == 0){
-      // Initialize the csr objects with theta-dtheta, theta, theta+dtheta
+      // Initialize the csr objects with theta-dtheta, theta, theta+dtheta in order 
+      // to compute adrFixed if no file was specified in input.
         c.init();
         switch (counter % 3) { 
         case 0:
-            cout << "theta - dtheta fixed component computed " << endl;
+            cout << "theta - dtheta auxiliary density response"
+            << " fixed component stored in file" << endl;
             break;
         case 1:
-            cout << "theta fixed component computed " << endl;
+            cout << "theta fixed auxiliary density response" 
+            << " component stored in file"<< endl;
             break;
         case 2:
-            cout << "theta + dtheta fixed component computed " << endl;
+            cout << "theta + dtheta auxiliary density response" 
+            << " fixed component stored in file" << endl;
             break;
     }
         counter++;
+        // If file was specified read corresponding adrFixed from file 
       } else { 
           const double theta = in.getDegeneracy();
-          std::stringstream ss; // Create a stringstream to help with formatting
-    ss << std::fixed << std::setprecision(3); // Set fixed-point notation and precision
-    
-    // Append 'rs' and 'theta' to the stream
-    ss << "adr_fixed_rs0.000_theta" << theta << "_QSTLS.bin";
-    c.Stls::init();
-    std::string filename = ss.str(); // Convert the stringstream to a string for the filename
+          // Create a stringstream to help with formatting
+          std::stringstream ss; 
+          // Set precision to 3rd decimal
+          ss << std::fixed << std::setprecision(3); 
+          ss << "adr_fixed_theta" << theta << "_matsubara" << in.getNMatsubara() << ".bin";
+          std::string filename = ss.str();
+          // Compute ssfHF 
+          c.Rpa::computeChemicalPotential();
+          c.Rpa::computeIdr();
+          c.Rpa::computeSsfHF();
+          // Read adrFixed from file
           c.readAdrFixedFile(c.adrFixed, filename, false);
       }
     }
@@ -133,24 +139,31 @@ int QStructProp::compute() {
 void QStructProp::doIterations() {
   const auto& in = csr[0].in;
   const int maxIter = in.getNIter();
+  const int ompThreads = in.getNThreads();
   const double minErr = in.getErrMin();
   double err = 1.0;
   int counter = 0;
   // Define initial guess
   for (auto& c : csr) { c.initialGuess(); }
   // Iteration to solve for the structural properties
+  const bool useOMP = ompThreads > 1;
   while (counter < maxIter+1 && err > minErr ) {
-    for (auto& c : csr) {
-      c.computeAdrStls();
+    #pragma omp parallel num_threads(ompThreads) if (useOMP)
+    {
+      #pragma omp for
+      for (auto& c : csr) {
+        c.computeAdrStls();
+      }
+      #pragma omp for
+      for (size_t i = 0; i < csr.size(); ++i) {
+        auto& c = csr[i];
+        c.computeAdr();
+        c.computeSsf();
+        if (i == RS_THETA) {err = c.computeError(); }
+        c.updateSolution(); 
+      }
+      counter++;
     }
-    for (size_t i = 0; i < csr.size(); ++i) {
-      auto& c = csr[i];
-      c.computeAdr();
-      c.computeSsf();
-      if (i == RS_THETA) {err = c.computeError(); }
-      c.updateSolution(); 
-    }
-    counter++;
   }
   printf("Alpha = %.5e, Residual error "
 	 "(structural properties) = %.5e\n", csr[RS_THETA].alpha, err);
@@ -169,7 +182,6 @@ vector<double> QStructProp::getQ() const  {
 void QStlsCSR::computeAdrStls() {
   Qstls::computeAdr();
   lfc = adr;
-  //cout << adr(50,10) << endl;
 }
 
 double QStlsCSR::getDerivative(const Vector2D& f,
@@ -244,8 +256,8 @@ void QStlsCSR::computeAdr() {
 
 double QStlsCSR::getQAdder() const {
   Integrator1D itg1(in.getIntError());
-  Integrator2D itg2(in.getIntError());
-  const bool segregatedItg = in.getInt2DScheme() == "segregated";
+  Integrator2DSingular itg2(in.getIntError());
+  const bool segregatedItg = true;
   const vector<double> itgGrid = (segregatedItg) ? wvg : vector<double>();
   const Interpolator1D ssfItp(wvg, ssf);
   QAdder QTmp(in.getCoupling(), in.getDegeneracy(), mu, wvg.front(), wvg.back(), 
@@ -271,17 +283,17 @@ double QAdder::integrandDenominator(const double y) const {
 // Numerator integrand1
 double QAdder::integrandNumerator1(const double q) const {
   const double w = itg2.getX();
-  if (w == 0 || q == 0) { return 0; };
+  if (q == 0) { return 0; };
   double w2 = w*w;
   double w3 = w2*w;
   double logarg = (w + 2*q)/(w - 2*q);
   logarg = (logarg < 0.0) ? -logarg : logarg;
-  return q/(exp(q*q/Theta - mu) + 1.0) * q/w3 * (q/w - 1.0);
+  return q/(exp(q*q/Theta - mu) + 1.0) * q/w3 * (q/w * log(logarg) - 1.0);
 }
 
 // Numerator integrand2
 double QAdder::integrandNumerator2(const double w) const {
-  if (w == 0.0) return 0.0;
+  //if (w == 0.0) return 0.0;
   return w * (ssf(w) - 1.0);
 }
 
@@ -296,10 +308,9 @@ void QAdder::getIntDenominator(double &res) const {
 double QAdder::get() const {
   double Denominator;
   getIntDenominator(Denominator);
-  auto func1 = [&](const double& q)->double{return integrandNumerator1(q);};
-  auto func2 = [&](const double& w)->double{return integrandNumerator2(w);};
-  itg2.compute(func1, func2, limits.first, limits.second, limits.first, limits.second, itgGrid);
-  cout << "Numerator: " << itg2.getSolution() << endl;
-  cout << "Denominator: " << Denominator << endl;
+  vector<double> singularPoints = vector<double>{limits.first, limits.second};
+  auto func1 = [&](const double& w)->double{return integrandNumerator2(w);};
+  auto func2 = [&](const double& q)->double{return integrandNumerator1(q);};
+  itg2.compute(func1, func2, limits.first, limits.second, limits.first, limits.second, itgGrid, singularPoints);
   return 12.0 / (M_PI * lambda) * itg2.getSolution()/Denominator;
 }

@@ -321,7 +321,7 @@ class QVSStls(qc.VSStls, Qstls):
                  cutoff : float = 10.0,
                  error : float = 1.0e-5,
                  fixed : str = None,
-                 mixing : float = 1.0,
+                 mixing : float = 0.5,
                  guess : qp.QstlsGuess = None,
                  iterations : int = 1000,
                  matsubara : int = 128,
@@ -399,4 +399,10 @@ class QVSStls(qc.VSStls, Qstls):
         self._setHdfFile()
         self._save()
 
-   
+    # Save results to disk
+    @qu.MPI.runOnlyOnRoot
+    def _save(self) -> None:
+        """ Stores the results obtained by solving the scheme. 
+        """
+        super()._save()
+        pd.DataFrame(self.scheme.adr).to_hdf(self.hdfFileName, key="adr")
