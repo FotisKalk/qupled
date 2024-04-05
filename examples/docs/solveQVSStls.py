@@ -28,7 +28,6 @@ for theta in theta_values:
 
         # Solve the QSTLS scheme
         qvsstls.compute()
-        
         # Rest state points use precomputed FreeEnergyIntegrand
         rs_iter = np.arange(rs_min + step, rs_max + step, step)
         for rs in rs_iter:

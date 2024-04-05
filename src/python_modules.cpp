@@ -221,14 +221,6 @@ BOOST_PYTHON_MODULE(qupled)
     .add_property("error", &PyVSStls::getError)
     .add_property("freeEnergyIntegrand", &PyVSStls::getFreeEnergyIntegrand)
     .add_property("freeEnergyGrid", &PyVSStls::getFreeEnergyGrid);
-
-  // Class to solve the quantum VS scheme
-  bp::class_<QVSStls, bp::bases<Rpa>>("QVSStls",
-             bp::init<const QVSStlsInput>())
-     .def("compute", &PyQVSStls::compute)
-     .add_property("freeEnergyIntegrand", &PyQVSStls::getFreeEnergyIntegrand)
-     .add_property("freeEnergyGrid", &PyQVSStls::getFreeEnergyGrid)
-     .add_property("adr", &PyQVSStls::getAdr);
       
   // Class to solve quantum schemes
   bp::class_<Qstls, bp::bases<Stls>>("Qstls",
@@ -236,6 +228,15 @@ BOOST_PYTHON_MODULE(qupled)
     .def("compute", &PyQstls::compute)
     .add_property("error", &PyQstls::getError)
     .add_property("adr", &PyQstls::getAdr);
+
+  // Class to solve the quantum VS scheme
+  bp::class_<QVSStls, bp::bases<Rpa>>("QVSStls",
+             bp::init<const QVSStlsInput>())
+    .def("compute", &PyQVSStls::compute)
+    .add_property("error", &PyQVSStls::getError)
+    .add_property("freeEnergyIntegrand", &PyQVSStls::getFreeEnergyIntegrand)
+    .add_property("freeEnergyGrid", &PyQVSStls::getFreeEnergyGrid)
+    .add_property("adr", &PyQVSStls::getAdr);
 
   // Post-process methods
   bp::def("computeRdf", &PyThermo::computeRdf);

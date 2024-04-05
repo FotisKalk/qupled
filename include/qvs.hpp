@@ -62,7 +62,7 @@ private:
   // Integrator1D 
   Integrator1D &itg1;
   // Integrator2D 
-  Integrator2DSingular &itg2;
+   Integrator2DSingular &itg2;
   // Interpolator 1D class instance
   const Interpolator1D &interp;
   
@@ -165,7 +165,6 @@ public:
   // Constructor for recursive calculations
   QVSStls(const QVSStlsInput &in_,
 	  const QThermoProp& thermoProp_) : VSBase(in_, thermoProp_) { ; }
-  
   // Getters
   vecUtil::Vector2D getAdr() const { return adr; }
   

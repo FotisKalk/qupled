@@ -11,4 +11,3 @@ qvsstls = qpq.QVSStls(0.1,
 
 # Solve the QVSSTLS scheme
 qvsstls.compute()
-

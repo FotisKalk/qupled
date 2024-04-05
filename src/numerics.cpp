@@ -286,6 +286,7 @@ void Integrator1DFourier::compute(const function<double(double)>& func){
 		  qtab, &sol, &err);
 }
 
+
 // -----------------------------------------------------------------
 // Integrator1DSingular class
 // -----------------------------------------------------------------
