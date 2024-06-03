@@ -29,9 +29,17 @@ public:
   void init();
   // Compute Q
   double getQAdder() const;
+  // Methods to save previous iteration data
+  void saveSsf(const int &m);
+  void saveRes(const int &m);
 
 private:
 
+  // Vectors for saving previous ssf and residual
+  Vector2D ssfVec;
+  Vector2D resVec;
+  // Anderson parameter for number of saved iterations
+  const int mAnderson = 5;
   // Helper methods to compute the derivatives
   double getDerivative(const std::shared_ptr<Vector2D> &f,
                        const int &l,

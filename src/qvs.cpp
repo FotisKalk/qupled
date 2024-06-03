@@ -8,6 +8,7 @@
 
 using namespace std;
 using namespace vecUtil;
+using namespace MPIUtil;
 using ItgParam = Integrator1D::Param;
 using Itg2DParam = Integrator2D::Param;
 using ItgType = Integrator1D::Type;
@@ -89,6 +90,7 @@ void QStructProp::doIterations() {
   const double minErr = in.getErrMin();
   double err = 1.0;
   int counter = 0;
+  int mIter = 0;
   // Define initial guess
   for (auto &c : csr) {
     c.initialGuess();
@@ -96,6 +98,7 @@ void QStructProp::doIterations() {
   // Iteration to solve for the structural properties
   const bool useOMP = ompThreads > 1;
   while (counter < maxIter + 1 && err > minErr) {
+    double tic = timer();
 #pragma omp parallel num_threads(ompThreads) if (useOMP)
     {
 #pragma omp for
@@ -111,7 +114,16 @@ void QStructProp::doIterations() {
         c.updateSolution();
       }
     }
+    for (auto &c : csr) {
+      c.saveSsf(mIter);
+      c.saveRes(mIter);
+    }
+    mIter++;
+    double toc = timer();
     counter++;
+    printf("--- iteration %d ---\n", counter);
+    printf("Elapsed time: %f seconds\n", toc - tic);
+    printf("Residual error: %.5e\n", err);
   }
   if (verbose) {
     printf("Alpha = %.5e, Residual error "
@@ -152,6 +164,9 @@ void QStlsCSR::init() {
   }
   // MPI barrier to make sure that all processes see the same files
   MPIUtil::barrier();
+  // Set size for ssfVec and resVec
+  ssfVec.resize(mAnderson, wvg.size());
+  resVec.resize(mAnderson, wvg.size());
 }
 
 void QStlsCSR::computeAdrStls() {
@@ -164,8 +179,7 @@ void QStlsCSR::computeAdr() {
   assert(alpha != DEFAULT_ALPHA);
   // Derivative contributions
   const double &rs = in.getCoupling();
-  // const double& theta = in.getDegeneracy();
-  const double &theta = 0.0;
+  const double &theta = in.getDegeneracy();
   const double &dx = in.getWaveVectorGridRes();
   const double &drs = in.getCouplingResolution();
   const double &dTheta = in.getDegeneracyResolution();
@@ -253,6 +267,54 @@ double QStlsCSR::getDerivative(const shared_ptr<Vector2D> &f,
     assert(false);
     return -1;
     break;
+  }
+}
+
+void QStlsCSR::saveSsf(const int &l) { 
+  const size_t nx = wvg.size();
+  
+  if (l >= mAnderson) {
+    for (size_t x = 0; x < nx; ++x) {
+      // Remove the first element and shift all elements one position to the left
+      for (int i = 0; i < mAnderson - 1; ++i) {
+        ssfVec(i, x) = ssfVec(i + 1, x);
+      }
+      // Append the new value to the last position
+      ssfVec(mAnderson - 1, x) = ssfNew[x];
+    }
+  } else {
+    for (size_t x = 0; x < nx; ++x) {
+      ssfVec(l, x) = ssfNew[x]; 
+    }
+  }
+
+  // // Print ssfVec
+  // std::cout << "ssfVec after update:\n";
+  // for (int i = 0; i < std::min(l, mAnderson); ++i) {
+  //   std::cout << "Row " << i << ": ";
+  //   for (size_t j = 0; j < nx; ++j) { 
+  //     std::cout << ssfVec(i, j) << " ";
+  //   }
+  //   std::cout << std::endl;
+  // }
+}
+
+void QStlsCSR::saveRes(const int &l) {
+  const size_t nx = wvg.size(); 
+
+  if (l >= mAnderson) {
+    for (size_t x = 0; x < nx; ++x) {
+      // Remove the first element and shift all elements one position to the left
+      for (int i = 0; i < mAnderson - 1; ++i) {
+        resVec(i, x) = resVec(i + 1, x);
+      }
+      // Append the new value to the last position
+      resVec(mAnderson - 1, x) = ssfNew[x];
+    }
+  } else {
+    for (size_t x = 0; x < nx; ++x) {
+      resVec(l, x) = ssfNew[x] - ssfOld[x]; 
+    }
   }
 }
 
