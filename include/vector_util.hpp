@@ -2,6 +2,7 @@
 #define VECTOR_UTIL_HPP
 
 #include <vector>
+#include <vector2D.hpp>
 
 // ------------------------------------------------------------------
 // Utility functions to manipulate vectors from the standard library
@@ -35,6 +36,11 @@ namespace vecUtil {
 
   // Fill vector with constant values
   void fill(std::vector<double> &v, const double &num);
+
+  Vector2D multiply(const Vector2D &A, const Vector2D &B);
+  std::vector<double> multiply(const Vector2D &A, const std::vector<double> &x);
+  Vector2D transpose(const Vector2D &A);
+  std::vector<double> solveGaussian(const Vector2D &A, const std::vector<double> &b);
 
 } // namespace vecUtil
 

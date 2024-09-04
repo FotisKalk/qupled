@@ -5,6 +5,8 @@
 #include "thermo_util.hpp"
 #include "vector_util.hpp"
 #include <filesystem>
+#include <fstream>
+#include <iomanip> // For setting precision
 
 using namespace std;
 using namespace vecUtil;
@@ -88,6 +90,7 @@ void QStructProp::doIterations() {
   const int maxIter = in.getNIter();
   const int ompThreads = in.getNThreads();
   const double minErr = in.getErrMin();
+  const int mAnderson = 15;
   double err = 1.0;
   int counter = 0;
   int mIter = 0;
@@ -111,7 +114,15 @@ void QStructProp::doIterations() {
         c.computeAdr();
         c.computeSsf();
         if (i == RS_THETA) { err = c.computeError(); }
-        c.updateSolution();
+        if (mIter > 1000) {
+          c.AndersonMixing(i);
+          // if (i == RS_THETA) { 
+        
+          // for (size_t x = 0; x < 100; ++x) { 
+          // std::cout << " ssfOld: " << c.ssfOld[x] << std::endl; }}
+        } else {   
+          c.updateSolution();
+        }
       }
     }
     for (auto &c : csr) {
@@ -275,49 +286,164 @@ void QStlsCSR::saveSsf(const int &l) {
   
   if (l >= mAnderson) {
     for (size_t x = 0; x < nx; ++x) {
-      // Remove the first element and shift all elements one position to the left
+      // Shift all elements one position to the left
       for (int i = 0; i < mAnderson - 1; ++i) {
         ssfVec(i, x) = ssfVec(i + 1, x);
       }
-      // Append the new value to the last position
-      ssfVec(mAnderson - 1, x) = ssfNew[x];
     }
+    // Append the new value to the last position
+    ssfVec.fill(mAnderson - 1, ssfNew);
   } else {
-    for (size_t x = 0; x < nx; ++x) {
-      ssfVec(l, x) = ssfNew[x]; 
-    }
+    ssfVec.fill(l,ssfNew);
   }
-
-  // // Print ssfVec
-  // std::cout << "ssfVec after update:\n";
-  // for (int i = 0; i < std::min(l, mAnderson); ++i) {
-  //   std::cout << "Row " << i << ": ";
-  //   for (size_t j = 0; j < nx; ++j) { 
-  //     std::cout << ssfVec(i, j) << " ";
-  //   }
-  //   std::cout << std::endl;
-  // }
+//   // Print ssfVec
+//  std::cout << "ssfVec after update:\n";
+//  for (int i = 0; i < std::min(l, mAnderson); ++i) {
+//   std::cout << "Row " << i << ": ";
+//   for (size_t j = 0; j < nx; ++j) { 
+//    std::cout << ssfVec(i, j) << " ";
+//   }
+//   std::cout << std::endl;
+//  }
 }
 
 void QStlsCSR::saveRes(const int &l) {
-  const size_t nx = wvg.size(); 
+    const size_t nx = wvg.size(); 
 
-  if (l >= mAnderson) {
-    for (size_t x = 0; x < nx; ++x) {
-      // Remove the first element and shift all elements one position to the left
-      for (int i = 0; i < mAnderson - 1; ++i) {
-        resVec(i, x) = resVec(i + 1, x);
-      }
-      // Append the new value to the last position
-      resVec(mAnderson - 1, x) = ssfNew[x];
+    // std::ofstream res_log_file("res_log_" + std::to_string(l) + ".log");
+
+    if (l >= mAnderson) {
+        for (size_t x = 0; x < nx; ++x) {
+            // Shift all elements one position to the left
+            for (int i = 0; i < mAnderson - 1; ++i) {
+                resVec(i, x) = resVec(i + 1, x);
+            }
+        }
+        // Append the new value to the last position
+        resVec.fill(mAnderson - 1, diff(ssfNew, ssfOld));
+
+        // // Log the residuals
+        // res_log_file << "Residuals for iteration " << l << ":\n";
+        // for (size_t x = 0; x < nx; ++x) {
+        //     res_log_file << resVec(mAnderson - 1, x) << " ";
+        // }
+        // res_log_file << "\n";
+
+    } else {
+        resVec.fill(l, diff(ssfNew, ssfOld));
+
+        // // Log the residuals
+        // res_log_file << "Residuals for iteration " << l << ":\n";
+        // for (size_t x = 0; x < nx; ++x) {
+        //     res_log_file << resVec(l, x) << " ";
+        // }
+        // res_log_file << "\n";
     }
-  } else {
-    for (size_t x = 0; x < nx; ++x) {
-      resVec(l, x) = ssfNew[x] - ssfOld[x]; 
-    }
-  }
+
+    // res_log_file.close();
 }
 
+
+void QStlsCSR::AndersonMixing(int csr_id) {
+    const int m = mAnderson;
+    const size_t nx = wvg.size();
+
+    // Open a log file for the current csr object
+    std::ofstream log_file("csr_" + std::to_string(csr_id) + ".log");
+
+    // Create matrix A and vector b for the least-squares problem
+    Vector2D A(nx, m);
+    std::vector<double> b(nx);
+
+    for (size_t x = 0; x < nx; ++x) {
+        b[x] = resVec(m-1, x);
+        for (int i = 0; i < m; ++i) {
+            A(x, i) = resVec(m-1-i, x);
+        }
+    }
+
+    // Log matrix A and vector b
+    log_file << "Matrix A:\n";
+    for (size_t i = 0; i < nx; ++i) {
+        for (int j = 0; j < m; ++j) {
+            log_file << std::setprecision(5) << A(i, j) << " ";
+        }
+        log_file << "\n";
+    }
+
+    log_file << "Vector b:\n";
+    for (size_t i = 0; i < nx; ++i) {
+        log_file << std::setprecision(5) << b[i] << " ";
+    }
+    log_file << "\n";
+
+    // Solve the normal equations: (A^T A + lambda * I) beta = A^T b
+    Vector2D AT = vecUtil::transpose(A);
+    Vector2D ATA = vecUtil::multiply(AT, A);
+    std::vector<double> ATb = vecUtil::multiply(AT, b);
+
+    // Add regularization to ATA
+    double lambda = 1e-8;
+    for (size_t i = 0; i < ATA.size(0); ++i) {
+        ATA(i, i) += lambda;
+    }
+
+    // Log matrix ATA and vector ATb
+    log_file << "Matrix ATA (with regularization):\n";
+    for (size_t i = 0; i < ATA.size(0); ++i) {
+        for (size_t j = 0; j < ATA.size(1); ++j) {
+            log_file << std::setprecision(5) << ATA(i, j) << " ";
+        }
+        log_file << "\n";
+    }
+
+    log_file << "Vector ATb:\n";
+    for (size_t i = 0; i < ATb.size(); ++i) {
+        log_file << std::setprecision(5) << ATb[i] << " ";
+    }
+    log_file << "\n";
+
+    std::vector<double> beta = vecUtil::solveGaussian(ATA, ATb);
+
+    // Log vector beta
+    log_file << "Vector beta:\n";
+    for (size_t i = 0; i < beta.size(); ++i) {
+        log_file << std::setprecision(5) << beta[i] << " ";
+    }
+    log_file << "\n";
+
+    // Update the iterate
+    for (size_t x = 0; x < nx; ++x) {
+        double correction = 0.0;
+        for (int i = 0; i < m; ++i) {
+            correction += beta[i] * resVec(m-1-i, x);
+        }
+
+        // Log correction details
+        log_file << "Correction for index " << x << ": " << correction << "\n";
+        log_file << "Values contributing to correction:\n";
+        for (int i = 0; i < m; ++i) {
+            log_file << "beta[" << i << "] = " << beta[i] << ", resVec(" << (m-1-i) << ", " << x << ") = " << resVec(m-1-i, x) << "\n";
+        }
+
+        // Check for NaN or infinity in correction
+        if (std::isnan(correction) || std::isinf(correction)) {
+            log_file << "NaN or Inf detected in correction at index " << x << ": " << correction << "\n";
+            log_file << "resVec(m-1-i, x) values:";
+            for (int i = 0; i < m; ++i) {
+                log_file << " " << resVec(m-1-i, x);
+            }
+            log_file << "\n";
+        }
+
+        // Update ssfOld only if correction is valid
+        if (!std::isnan(correction) && !std::isinf(correction)) {
+            ssfOld[x] = ssfVec(m-1, x) - correction;
+        }
+    }
+
+    log_file.close();
+}
 // -----------------------------------------------------------------
 // QAdder class
 // -----------------------------------------------------------------

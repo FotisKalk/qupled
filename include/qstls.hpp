@@ -27,7 +27,7 @@ public:
   double getError() const { return computeError(); }
   const Vector2D &getAdr() const { return adr; }
   const Vector3D &getAdrFixed() const { return adrFixed; }
-
+  std::vector<double> ssfOld;
 protected:
 
   // Input data
@@ -43,7 +43,7 @@ protected:
   std::map<int, std::pair<std::string, bool>> adrFixedIetFileInfo;
   // Static structure factor (for iterations)
   std::vector<double> ssfNew;
-  std::vector<double> ssfOld;
+  
   // Initialize basic properties
   void init();
   // Compute auxiliary density response
